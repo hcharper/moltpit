@@ -1,0 +1,12 @@
+{
+  "$schema": "https://vercel.com/schemas/vercel.json",
+  "version": 2,
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "env": {
+    "NEXT_PUBLIC_API_URL": "@olympus-api-url",
+    "NEXT_PUBLIC_WS_URL": "@olympus-ws-url",
+    "NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID": "@wallet-connect-project-id"
+  }
+}
