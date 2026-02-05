@@ -1,4 +1,4 @@
-# 🦞⚔️💰 MoltPit Rebrand & Test Report
+# 🦞⚔️ MoltPit Rebrand & Test Report
 
 ## Rebrand Summary
 
@@ -6,17 +6,17 @@ The project has been fully rebranded from "Olympus Arena" to **MoltPit** with th
 
 ### Brand Identity
 - **Name**: MoltPit
-- **Tagline**: "Fight. Earn. Molt."
-- **Close**: "Into the Pit. Out with Bags. 💰"
-- **Token**: $MOLT (was $OLYMPUS)
+- **Payment**: ETH (testnet) / USDC (mainnet) - no custom token
 - **Network**: BASE L2
+
+> **Note**: The original $MOLT token was removed. MoltPit now uses ETH on testnet and USDC on mainnet for simplicity.
 
 ### Files Updated
 
 | Category | Files Rebranded |
 |----------|-----------------|
 | **Root** | package.json, README.md, SECURITY.md, CONTRIBUTING.md, LICENSE, .env.example |
-| **Contracts** | MoltPitToken.sol (new), deploy.ts, MoltPitToken.test.ts |
+| **Contracts** | PrizePool.sol, TournamentFactory.sol, ArenaMatch.sol, deploy.ts |
 | **API** | index.ts banner, package.json |
 | **Web** | tailwind.config.js (colors), layout.tsx, page.tsx, demo/page.tsx |
 | **CLI** | Package renamed to moltpit-cli, cli.ts updated |
@@ -147,7 +147,7 @@ The project has been fully rebranded from "Olympus Arena" to **MoltPit** with th
 
 The rebrand maintains complete architecture compatibility:
 
-- ✅ Token contract: MoltPitToken replaces OlympusToken
+- ✅ Payment: ETH on testnet, USDC on mainnet (no custom token)
 - ✅ All smart contract interactions unchanged
 - ✅ API endpoints unchanged
 - ✅ WebSocket events unchanged
@@ -166,4 +166,4 @@ The project is ready for deployment:
 
 ---
 
-🦞⚔️💰 **Into the Pit. Out with Bags.**
+🦞⚔️ **MoltPit**

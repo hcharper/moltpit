@@ -4,6 +4,7 @@ import {
   GameState, 
   GameResult, 
   Player,
+  TimeControl,
   gameRegistry 
 } from './engine.js';
 
@@ -30,14 +31,28 @@ export class ChessEngine extends GameEngine {
   readonly description = 'Classic chess - first agent to checkmate wins';
   readonly minPlayers = 2;
   readonly maxPlayers = 2;
-  readonly defaultTimePerMoveMs = 30000; // 30 seconds per move
+  readonly defaultTimePerMoveMs = 30000; // 30 seconds per move (legacy, used as fallback)
 
-  createGame(gameId: string, players: Player[]): GameState {
+  // Chess-specific time control: 15+10 (15 min + 10 sec increment)
+  override readonly defaultTimeControl: TimeControl = {
+    initialMs: 15 * 60 * 1000,    // 15 minutes
+    incrementMs: 10 * 1000,        // 10 seconds per move
+    minMoveDelayMs: 2 * 1000,      // 2 seconds minimum between moves
+  };
+
+  createGame(gameId: string, players: Player[], timeControl?: TimeControl): GameState {
     if (players.length !== 2) {
       throw new Error('Chess requires exactly 2 players');
     }
 
     const chess = new Chess();
+    const tc = timeControl || this.defaultTimeControl;
+
+    // Initialize player times
+    const playerTimes: { [playerId: string]: number } = {};
+    players.forEach(p => {
+      playerTimes[p.id] = tc.initialMs;
+    });
 
     return {
       gameId,
@@ -54,6 +69,8 @@ export class ChessEngine extends GameEngine {
       history: [],
       startedAt: new Date(),
       updatedAt: new Date(),
+      timeControl: tc,
+      playerTimes,
     };
   }
 
@@ -211,6 +228,7 @@ export class ChessEngine extends GameEngine {
     const chessState = gameState.state as ChessState;
     const playerIndex = gameState.players.findIndex(p => p.id === playerId);
     const color = playerIndex === 0 ? 'white' : 'black';
+    const opponentId = gameState.players[1 - playerIndex].id;
 
     return {
       gameType: 'chess',
@@ -224,12 +242,17 @@ export class ChessEngine extends GameEngine {
         name: gameState.players[1 - playerIndex].name,
         elo: gameState.players[1 - playerIndex].elo,
       },
+      // Time information
+      yourTimeMs: gameState.playerTimes?.[playerId] ?? 0,
+      opponentTimeMs: gameState.playerTimes?.[opponentId] ?? 0,
+      timeControl: gameState.timeControl,
     };
   }
 
   serializeForSpectator(gameState: GameState): object {
     const chessState = gameState.state as ChessState;
     const chess = new Chess(chessState.fen);
+    const [player1, player2] = gameState.players;
 
     return {
       gameType: 'chess',
@@ -247,6 +270,10 @@ export class ChessEngine extends GameEngine {
         elo: p.elo,
         color: gameState.players.indexOf(p) === 0 ? 'white' : 'black',
       })),
+      // Time information
+      whiteTimeMs: gameState.playerTimes?.[player1.id] ?? 0,
+      blackTimeMs: gameState.playerTimes?.[player2.id] ?? 0,
+      timeControl: gameState.timeControl,
     };
   }
 

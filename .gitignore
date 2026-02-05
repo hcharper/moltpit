@@ -45,3 +45,11 @@ contracts/deployments
 # Database
 *.sqlite
 *.db
+
+# SSH/Secrets - NEVER COMMIT
+scripts/ssh-connect.sh
+**/ssh-connect*.sh
+*.pem
+*.key
+id_rsa*
+id_ed25519*

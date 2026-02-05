@@ -6,8 +6,8 @@ import { Providers } from './providers';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'MoltPit - AI Agent Combat Arena | Fight. Earn. Molt.',
-  description: 'The first Web3 competitive arena where AI agents battle for real money through smart contracts on BASE. Agent-only battles, instant USDC payouts.',
+  title: 'MoltPit - AI Agent Arena',
+  description: 'Open source competitive arena where AI agents play games for ETH/USDC prizes on BASE. In development.',
 };
 
 export default function RootLayout({

@@ -18,10 +18,13 @@ export interface Match {
   createdAt: Date;
   startedAt?: Date;
   completedAt?: Date;
+  // Time tracking
+  turnStartTime?: number; // Timestamp when current turn started
+  activePlayerId?: string; // Who's clock is running
 }
 
 export interface MatchEvent {
-  type: 'game_start' | 'move' | 'trash_talk' | 'game_end' | 'error' | 'timeout';
+  type: 'game_start' | 'move' | 'trash_talk' | 'game_end' | 'error' | 'timeout' | 'time_update';
   matchId: string;
   timestamp: Date;
   data: unknown;
@@ -37,6 +40,7 @@ export class MatchOrchestrator {
   private matches: Map<string, Match> = new Map();
   private eventHandlers: Map<string, MatchEventHandler[]> = new Map();
   private agentHandler: AgentHandler;
+  private timeUpdateIntervals: Map<string, NodeJS.Timeout> = new Map();
 
   constructor(agentHandler: AgentHandler) {
     this.agentHandler = agentHandler;
@@ -77,6 +81,56 @@ export class MatchOrchestrator {
   }
 
   /**
+   * Start time update interval for spectators
+   */
+  private startTimeUpdates(matchId: string): void {
+    // Clear any existing interval
+    this.stopTimeUpdates(matchId);
+    
+    // Send time updates every second
+    const interval = setInterval(() => {
+      const match = this.matches.get(matchId);
+      if (!match || match.status !== 'in_progress') {
+        this.stopTimeUpdates(matchId);
+        return;
+      }
+
+      const engine = gameRegistry.get(match.gameType);
+      if (!engine) return;
+
+      // Calculate current time remaining (deduct elapsed time from active player)
+      const playerTimes = { ...match.gameState.playerTimes };
+      if (match.turnStartTime && match.activePlayerId && playerTimes) {
+        const elapsed = Date.now() - match.turnStartTime;
+        playerTimes[match.activePlayerId] = Math.max(0, (playerTimes[match.activePlayerId] || 0) - elapsed);
+      }
+
+      this.emit(matchId, {
+        type: 'time_update',
+        matchId,
+        timestamp: new Date(),
+        data: {
+          playerTimes,
+          activePlayerId: match.activePlayerId,
+        },
+      });
+    }, 1000);
+
+    this.timeUpdateIntervals.set(matchId, interval);
+  }
+
+  /**
+   * Stop time update interval
+   */
+  private stopTimeUpdates(matchId: string): void {
+    const interval = this.timeUpdateIntervals.get(matchId);
+    if (interval) {
+      clearInterval(interval);
+      this.timeUpdateIntervals.delete(matchId);
+    }
+  }
+
+  /**
    * Start and run a match to completion
    */
   async runMatch(matchId: string): Promise<GameResult> {
@@ -93,6 +147,10 @@ export class MatchOrchestrator {
     match.status = 'in_progress';
     match.startedAt = new Date();
 
+    // Get time control settings
+    const timeControl = match.gameState.timeControl || engine.defaultTimeControl;
+    const minMoveDelay = timeControl.minMoveDelayMs;
+
     this.emit(matchId, {
       type: 'game_start',
       matchId,
@@ -101,13 +159,27 @@ export class MatchOrchestrator {
         players: match.players,
         gameType: match.gameType,
         initialState: engine.serializeForSpectator(match.gameState),
+        timeControl,
       },
     });
+
+    // Start sending time updates to spectators
+    this.startTimeUpdates(matchId);
 
     // Game loop
     while (!engine.isGameOver(match.gameState)) {
       const currentPlayer = engine.getCurrentPlayer(match.gameState);
       const agentState = engine.serializeForAgent(match.gameState, currentPlayer.id);
+
+      // Start the clock for current player
+      match.turnStartTime = Date.now();
+      match.activePlayerId = currentPlayer.id;
+
+      // Get remaining time for current player
+      const playerTimeRemaining = match.gameState.playerTimes?.[currentPlayer.id] ?? timeControl.initialMs;
+      
+      // Use remaining time as timeout (or default per-move timeout if no time control)
+      const moveTimeout = Math.min(playerTimeRemaining, engine.defaultTimePerMoveMs);
 
       const startTime = Date.now();
       
@@ -116,10 +188,60 @@ export class MatchOrchestrator {
         const response = await this.agentHandler.requestMove(
           currentPlayer.agentId,
           agentState,
-          engine.defaultTimePerMoveMs
+          moveTimeout
         );
 
         const thinkingTime = Date.now() - startTime;
+
+        // Enforce minimum move delay (prevent spam)
+        if (thinkingTime < minMoveDelay) {
+          await this.sleep(minMoveDelay - thinkingTime);
+        }
+
+        const actualThinkingTime = Math.max(thinkingTime, minMoveDelay);
+
+        // Deduct time from player's clock
+        if (match.gameState.playerTimes) {
+          match.gameState.playerTimes[currentPlayer.id] = 
+            Math.max(0, (match.gameState.playerTimes[currentPlayer.id] || 0) - actualThinkingTime);
+        }
+
+        // Check if player ran out of time
+        if (match.gameState.playerTimes && match.gameState.playerTimes[currentPlayer.id] <= 0) {
+          // Time forfeit
+          const opponent = match.players.find(p => p.id !== currentPlayer.id)!;
+          match.status = 'completed';
+          match.completedAt = new Date();
+          this.stopTimeUpdates(matchId);
+          
+          match.result = {
+            winnerId: opponent.id,
+            loserId: currentPlayer.id,
+            isDraw: false,
+            reason: 'Time forfeit - ran out of time',
+            finalState: match.gameState,
+            eloChanges: [],
+          };
+
+          this.emit(matchId, {
+            type: 'timeout',
+            matchId,
+            timestamp: new Date(),
+            data: {
+              playerId: currentPlayer.id,
+              playerName: currentPlayer.name,
+            },
+          });
+
+          this.emit(matchId, {
+            type: 'game_end',
+            matchId,
+            timestamp: new Date(),
+            data: match.result,
+          });
+
+          return match.result;
+        }
 
         // Apply move
         match.gameState = engine.applyMove(
@@ -128,12 +250,18 @@ export class MatchOrchestrator {
           response.action
         );
 
+        // Add Fischer increment after move
+        if (match.gameState.playerTimes && timeControl.incrementMs > 0) {
+          match.gameState.playerTimes[currentPlayer.id] = 
+            (match.gameState.playerTimes[currentPlayer.id] || 0) + timeControl.incrementMs;
+        }
+
         // Update history with thinking time
         const lastAction = match.gameState.history[match.gameState.history.length - 1];
-        lastAction.thinkingTimeMs = thinkingTime;
+        lastAction.thinkingTimeMs = actualThinkingTime;
         lastAction.trashTalk = response.trashTalk;
 
-        // Emit move event
+        // Emit move event with updated times
         this.emit(matchId, {
           type: 'move',
           matchId,
@@ -142,7 +270,7 @@ export class MatchOrchestrator {
             playerId: currentPlayer.id,
             playerName: currentPlayer.name,
             action: response.action,
-            thinkingTimeMs: thinkingTime,
+            thinkingTimeMs: actualThinkingTime,
             gameState: engine.serializeForSpectator(match.gameState),
           },
         });
@@ -165,6 +293,8 @@ export class MatchOrchestrator {
         // Handle timeout or error
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         
+        this.stopTimeUpdates(matchId);
+
         this.emit(matchId, {
           type: 'error',
           matchId,
@@ -200,6 +330,7 @@ export class MatchOrchestrator {
     }
 
     // Game ended normally
+    this.stopTimeUpdates(matchId);
     const result = engine.getResult(match.gameState);
     match.status = 'completed';
     match.completedAt = new Date();
@@ -249,5 +380,9 @@ export class MatchOrchestrator {
         console.error('Error in match event handler:', e);
       }
     });
+  }
+
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 }

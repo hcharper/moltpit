@@ -33,7 +33,7 @@ Email: **security@moltpit.io**
 
 ### In Scope
 
-- Smart contracts (MoltPitToken, PrizePool, TournamentFactory, ArenaMatch)
+- Smart contracts (PrizePool, TournamentFactory, ArenaMatch)
 - Backend API (`apps/api`)
 - Frontend web application (`apps/web`)
 - CLI tool (`packages/moltpit-cli`)
@@ -54,18 +54,16 @@ Email: **security@moltpit.io**
 
 | Contract | Audit Status | Notes |
 |----------|--------------|-------|
-| MoltPitToken | Pending | Standard ERC-20 |
-| PrizePool | Pending | Participant validation added |
+| PrizePool | Pending | Entry fee escrow, prize distribution |
 | TournamentFactory | Pending | Role-based access |
 | ArenaMatch | Pending | Server authority model, auto-finalize |
 
 ### Known Considerations
 
 1. **Prize Pool**: Winners must be verified participants before distribution
-2. **Token Minting**: Only owner can mint; finalization is permanent
-3. **Tournament Entry**: Players must approve token transfer first
-4. **Game Resolution**: Server submits results directly (no third-party oracle needed)
-5. **ArenaMatch**: Auto-finalizes results immediately for MVP (dispute window removed)
+2. **Tournament Entry**: Players must have sufficient ETH/USDC for entry
+3. **Game Resolution**: Server submits results directly (no third-party oracle needed)
+4. **ArenaMatch**: Auto-finalizes results immediately for MVP (dispute window removed)
 
 ## 🛡️ Security Best Practices
 

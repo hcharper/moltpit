@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { io, Socket } from 'socket.io-client';
 import dynamic from 'next/dynamic';
-import { Play, RefreshCw, Users, Clock, MessageSquare } from 'lucide-react';
+import { Play, RefreshCw, Users, Clock, MessageSquare, Timer } from 'lucide-react';
 
 // Dynamic import for Chessboard (it uses window)
 const Chessboard = dynamic(
@@ -21,10 +21,16 @@ interface Player {
 }
 
 interface MatchEvent {
-  type: 'game_start' | 'move' | 'trash_talk' | 'game_end' | 'error';
+  type: 'game_start' | 'move' | 'trash_talk' | 'game_end' | 'error' | 'time_update' | 'timeout';
   matchId: string;
   timestamp: string;
   data: unknown;
+}
+
+interface TimeControl {
+  initialMs: number;
+  incrementMs: number;
+  minMoveDelayMs: number;
 }
 
 interface GameState {
@@ -35,6 +41,71 @@ interface GameState {
   isDraw: boolean;
   players: Player[];
   moveHistory: { san: string }[];
+  whiteTimeMs?: number;
+  blackTimeMs?: number;
+  timeControl?: TimeControl;
+}
+
+// Format milliseconds to MM:SS
+function formatTime(ms: number): string {
+  if (ms <= 0) return '0:00';
+  const totalSeconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+// Chess Clock Component
+function ChessClock({ 
+  timeMs, 
+  isActive, 
+  playerName, 
+  color 
+}: { 
+  timeMs: number; 
+  isActive: boolean; 
+  playerName: string;
+  color: 'white' | 'black';
+}) {
+  const isLowTime = timeMs < 60000; // Under 1 minute
+  const isCritical = timeMs < 10000; // Under 10 seconds
+  
+  return (
+    <div className={`
+      flex items-center gap-3 px-4 py-3 rounded-lg transition-all duration-300
+      ${isActive 
+        ? isCritical 
+          ? 'bg-red-500/30 border-2 border-red-500 animate-pulse' 
+          : isLowTime 
+            ? 'bg-orange-500/20 border-2 border-orange-500' 
+            : 'bg-molt-orange/20 border-2 border-molt-orange'
+        : 'bg-gray-800/50 border border-gray-700'
+      }
+    `}>
+      <div
+        className={`w-4 h-4 rounded-full ${
+          color === 'white' ? 'bg-white' : 'bg-gray-900 border border-gray-600'
+        }`}
+      />
+      <div className="flex-1">
+        <span className="font-medium text-sm">{playerName}</span>
+      </div>
+      <div className={`
+        font-mono text-2xl font-bold
+        ${isActive 
+          ? isCritical 
+            ? 'text-red-400' 
+            : isLowTime 
+              ? 'text-orange-400' 
+              : 'text-molt-orange' 
+          : 'text-gray-400'
+        }
+      `}>
+        <Timer className={`inline w-5 h-5 mr-1 ${isActive ? 'animate-pulse' : ''}`} />
+        {formatTime(timeMs)}
+      </div>
+    </div>
+  );
 }
 
 export default function DemoPage() {
@@ -44,6 +115,7 @@ export default function DemoPage() {
   const [events, setEvents] = useState<MatchEvent[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [trashTalk, setTrashTalk] = useState<{ name: string; message: string } | null>(null);
+  const [playerTimes, setPlayerTimes] = useState<{ white: number; black: number }>({ white: 900000, black: 900000 });
 
   // Connect to WebSocket
   useEffect(() => {
@@ -64,15 +136,47 @@ export default function DemoPage() {
     socket.on('match_state', (data) => {
       if (data.gameState) {
         setGameState(data.gameState);
+        // Initialize times from game state
+        if (data.gameState.whiteTimeMs !== undefined) {
+          setPlayerTimes({
+            white: data.gameState.whiteTimeMs,
+            black: data.gameState.blackTimeMs,
+          });
+        }
       }
     });
 
     socket.on('match_event', (event: MatchEvent) => {
-      setEvents(prev => [...prev, event]);
+      // Don't log time_update events (too spammy)
+      if (event.type !== 'time_update') {
+        setEvents(prev => [...prev, event]);
+      }
 
       if (event.type === 'move' && event.data) {
         const moveData = event.data as { gameState: GameState };
         setGameState(moveData.gameState);
+        // Update times from move event
+        if (moveData.gameState.whiteTimeMs !== undefined) {
+          setPlayerTimes({
+            white: moveData.gameState.whiteTimeMs,
+            black: moveData.gameState.blackTimeMs,
+          });
+        }
+      }
+
+      if (event.type === 'time_update' && event.data) {
+        const timeData = event.data as { playerTimes: { [key: string]: number }; activePlayerId: string };
+        // Map player IDs to colors
+        if (gameState?.players) {
+          const whitePlayer = gameState.players.find(p => p.color === 'white');
+          const blackPlayer = gameState.players.find(p => p.color === 'black');
+          if (whitePlayer && blackPlayer && timeData.playerTimes) {
+            setPlayerTimes({
+              white: timeData.playerTimes[whitePlayer.id] ?? playerTimes.white,
+              black: timeData.playerTimes[blackPlayer.id] ?? playerTimes.black,
+            });
+          }
+        }
       }
 
       if (event.type === 'trash_talk' && event.data) {
@@ -81,7 +185,7 @@ export default function DemoPage() {
         setTimeout(() => setTrashTalk(null), 4000);
       }
 
-      if (event.type === 'game_end') {
+      if (event.type === 'game_end' || event.type === 'timeout') {
         setIsLoading(false);
       }
     });
@@ -91,7 +195,7 @@ export default function DemoPage() {
       socket.off('match_event');
       socket.emit('leave_match', matchId);
     };
-  }, [socket, matchId]);
+  }, [socket, matchId, gameState?.players]);
 
   const startDemo = useCallback(async () => {
     setIsLoading(true);
@@ -159,27 +263,26 @@ export default function DemoPage() {
                 </button>
               </div>
 
-              {/* Players */}
+              {/* Chess Clocks */}
               {gameState?.players && (
-                <div className="flex justify-between mb-4">
+                <div className="flex justify-between mb-4 gap-4">
                   {gameState.players.map((player) => (
-                    <div
+                    <ChessClock
                       key={player.id}
-                      className={`flex items-center gap-3 px-4 py-2 rounded-lg ${
-                        gameState.currentTurn === player.color
-                          ? 'bg-molt-orange/20 border border-molt-orange'
-                          : 'bg-gray-800/50'
-                      }`}
-                    >
-                      <div
-                        className={`w-4 h-4 rounded-full ${
-                          player.color === 'white' ? 'bg-white' : 'bg-gray-900 border border-gray-600'
-                        }`}
-                      />
-                      <span className="font-medium">{player.name}</span>
-                      <span className="text-gray-400 text-sm">({player.elo})</span>
-                    </div>
+                      timeMs={player.color === 'white' ? playerTimes.white : playerTimes.black}
+                      isActive={gameState.currentTurn === player.color && !gameState.isCheckmate && !gameState.isDraw}
+                      playerName={`${player.name} (${player.elo})`}
+                      color={player.color}
+                    />
                   ))}
+                </div>
+              )}
+
+              {/* Time Control Info */}
+              {gameState?.timeControl && (
+                <div className="text-center text-xs text-gray-500 mb-4">
+                  ⏱️ {Math.floor(gameState.timeControl.initialMs / 60000)}+{gameState.timeControl.incrementMs / 1000} 
+                  <span className="ml-2">(Fischer increment)</span>
                 </div>
               )}
 
@@ -276,6 +379,8 @@ function EventItem({ event }: { event: MatchEvent }) {
         return 'border-molt-orange bg-molt-orange/10';
       case 'game_end':
         return 'border-crypto-green bg-crypto-green/10';
+      case 'timeout':
+        return 'border-red-500 bg-red-500/10';
       case 'error':
         return 'border-red-500 bg-red-500/10';
       default:
@@ -294,6 +399,8 @@ function EventItem({ event }: { event: MatchEvent }) {
         return `💬 ${data.playerName}`;
       case 'game_end':
         return `🏆 Game over: ${(data as { reason?: string }).reason}`;
+      case 'timeout':
+        return `⏱️ ${data.playerName} ran out of time!`;
       case 'error':
         return `❌ Error`;
       default:

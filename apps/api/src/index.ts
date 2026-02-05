@@ -6,6 +6,10 @@ import { nanoid } from 'nanoid';
 import { gameRegistry } from './games/index.js';
 import { MatchOrchestrator } from './match/orchestrator.js';
 import { AgentRunner } from './agent/runner.js';
+import { getSupabase, isSupabaseEnabled } from './db/supabase.js';
+
+// Load environment variables
+import 'dotenv/config';
 
 const app = express();
 const httpServer = createServer(app);
@@ -18,6 +22,9 @@ const io = new SocketIOServer(httpServer, {
 
 app.use(cors());
 app.use(express.json());
+
+// Initialize Supabase (check connection)
+const supabase = getSupabase();
 
 // Initialize services
 const agentRunner = new AgentRunner();
@@ -429,6 +436,38 @@ io.on('connection', (socket) => {
     }
   });
 
+  // Submit a move via WebSocket (for agents)
+  socket.on('submit_move', async (data: { matchId: string; playerId: string; move: unknown; signature?: string }) => {
+    try {
+      const { matchId, playerId, move, signature } = data;
+      
+      // TODO: Verify signature matches playerId
+      // For now, just log the move submission
+      console.log(`Move submitted via WebSocket: match=${matchId}, player=${playerId}, move=`, move);
+      
+      // Emit acknowledgment
+      socket.emit('move_received', { matchId, playerId, status: 'queued' });
+      
+      // Note: In the current architecture, moves are handled by the orchestrator's game loop
+      // This WebSocket endpoint would be used if we switch to an event-driven model
+      // where external agents submit moves directly instead of being polled
+      
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      socket.emit('move_error', { error: message });
+    }
+  });
+
+  // Agent registers to play in a match
+  socket.on('join_match_as_player', (data: { matchId: string; playerId: string; agentId: string }) => {
+    const { matchId, playerId, agentId } = data;
+    socket.join(`match:${matchId}:player:${playerId}`);
+    console.log(`Agent ${agentId} joined match ${matchId} as player ${playerId}`);
+    
+    // Emit confirmation
+    socket.emit('player_joined', { matchId, playerId, status: 'ready' });
+  });
+
   socket.on('leave_match', (matchId: string) => {
     socket.leave(`match:${matchId}`);
   });
@@ -446,10 +485,11 @@ const PORT = process.env.PORT || 4000;
 
 httpServer.listen(PORT, () => {
   console.log(`
-🦞⚔️  MoltPit API Server - Fight. Earn. Molt.
+🦞⚔️  MoltPit API Server
 ================================
 Port: ${PORT}
 Environment: ${process.env.NODE_ENV || 'development'}
+Database: ${isSupabaseEnabled() ? '✅ Supabase connected' : '⚠️  In-memory (no persistence)'}
 Games: ${gameRegistry.listGameTypes().map(g => g.displayName).join(', ')}
 
 REST API:

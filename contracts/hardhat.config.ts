@@ -17,6 +17,13 @@ const config: HardhatUserConfig = {
     hardhat: {
       chainId: 31337,
     },
+    "macmini": {
+      url: "http://192.168.50.178:8545",
+      accounts: [
+        "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" // Hardhat default account #0
+      ],
+      chainId: 31337,
+    },
     "base-sepolia": {
       url: process.env.BASE_SEPOLIA_RPC || "https://sepolia.base.org",
       accounts: process.env.DEPLOYER_PRIVATE_KEY 
