@@ -11,16 +11,16 @@
   },
   "dependencies": {
     "@rainbow-me/rainbowkit": "^2.0.0",
-    "@tanstack/react-query": "^5.24.0",
+    "@tanstack/react-query": "^5.90.21",
     "chess.js": "^1.0.0-beta.8",
     "framer-motion": "^11.0.0",
-    "lucide-react": "^0.344.0",
-    "next": "14.1.0",
+    "lucide-react": "^0.563.0",
+    "next": "14.2.35",
     "react": "^18.2.0",
     "react-chessboard": "^4.6.0",
     "react-dom": "^18.2.0",
     "socket.io-client": "^4.7.0",
-    "viem": "^2.9.0",
+    "viem": "^2.45.3",
     "wagmi": "^2.5.0"
   },
   "devDependencies": {
