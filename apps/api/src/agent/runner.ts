@@ -1,17 +1,19 @@
 /**
  * Agent Runner
- * Handles communication with AI agents (Docker containers or API calls)
- * For now, implements a simple mock agent for testing
+ * Handles communication with AI agents (Docker containers, API calls, or WebSocket)
+ * Supports mock, api, docker, and websocket agent types
  */
 
 import { ChessMove } from '../games/chess.js';
+import type { Socket } from 'socket.io';
 
 export interface AgentConfig {
   id: string;
   name: string;
-  type: 'docker' | 'api' | 'mock';
+  type: 'docker' | 'api' | 'mock' | 'websocket';
   endpoint?: string;
   dockerImage?: string;
+  address?: string; // Ethereum wallet address for on-chain agents
 }
 
 interface ChessAgentState {
@@ -22,14 +24,88 @@ interface ChessAgentState {
   isYourTurn: boolean;
 }
 
+interface PendingMove {
+  resolve: (value: { action: unknown; trashTalk?: string }) => void;
+  reject: (reason: Error) => void;
+  timeout: NodeJS.Timeout;
+  matchId: string;
+}
+
 export class AgentRunner {
   private agents: Map<string, AgentConfig> = new Map();
+  private pendingMoves: Map<string, PendingMove> = new Map();
+  private agentSockets: Map<string, Socket> = new Map(); // agentId → socket
+  private socketToAgent: Map<string, string> = new Map(); // socketId → agentId
 
   /**
    * Register an agent
    */
   registerAgent(config: AgentConfig): void {
     this.agents.set(config.id, config);
+  }
+
+  /**
+   * Get a registered agent config
+   */
+  getAgent(agentId: string): AgentConfig | undefined {
+    return this.agents.get(agentId);
+  }
+
+  /**
+   * Associate a Socket.IO socket with an agent ID (for websocket agents)
+   */
+  bindSocket(agentId: string, socket: Socket): void {
+    this.agentSockets.set(agentId, socket);
+    this.socketToAgent.set(socket.id, agentId);
+  }
+
+  /**
+   * Remove socket binding (on disconnect)
+   */
+  unbindSocket(socketId: string): string | undefined {
+    const agentId = this.socketToAgent.get(socketId);
+    if (agentId) {
+      this.agentSockets.delete(agentId);
+      this.socketToAgent.delete(socketId);
+
+      // Reject any pending move for this agent
+      const pending = this.pendingMoves.get(agentId);
+      if (pending) {
+        clearTimeout(pending.timeout);
+        pending.reject(new Error('Agent disconnected'));
+        this.pendingMoves.delete(agentId);
+      }
+    }
+    return agentId;
+  }
+
+  /**
+   * Resolve a pending move from an external (websocket) agent
+   * Called by the submit_move socket handler
+   */
+  resolveExternalMove(agentId: string, move: { action: unknown; trashTalk?: string }): boolean {
+    const pending = this.pendingMoves.get(agentId);
+    if (!pending) {
+      return false; // No pending move request for this agent
+    }
+    clearTimeout(pending.timeout);
+    pending.resolve(move);
+    this.pendingMoves.delete(agentId);
+    return true;
+  }
+
+  /**
+   * Check if an agent has a socket bound
+   */
+  hasSocket(agentId: string): boolean {
+    return this.agentSockets.has(agentId);
+  }
+
+  /**
+   * Get the agent ID associated with a socket ID
+   */
+  getAgentIdForSocket(socketId: string): string | undefined {
+    return this.socketToAgent.get(socketId);
   }
 
   /**
@@ -52,11 +128,45 @@ export class AgentRunner {
         return this.mockAgentMove(gameState);
       case 'api':
         return this.apiAgentMove(agent, gameState, timeoutMs);
+      case 'websocket':
+        return this.websocketAgentMove(agent, gameState, timeoutMs);
       case 'docker':
         return this.dockerAgentMove(agent, gameState, timeoutMs);
       default:
         throw new Error(`Unknown agent type: ${agent.type}`);
     }
+  }
+
+  /**
+   * WebSocket-based agent — emits game_state to the agent's socket,
+   * then waits for a submit_move response via resolveExternalMove().
+   */
+  private websocketAgentMove(
+    agent: AgentConfig,
+    gameState: unknown,
+    timeoutMs: number
+  ): Promise<{ action: unknown; trashTalk?: string }> {
+    const socket = this.agentSockets.get(agent.id);
+    if (!socket) {
+      throw new Error(`WebSocket agent ${agent.id} not connected`);
+    }
+
+    return new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        this.pendingMoves.delete(agent.id);
+        reject(new Error(`WebSocket agent ${agent.id} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+
+      this.pendingMoves.set(agent.id, {
+        resolve,
+        reject,
+        timeout,
+        matchId: '', // Set by the caller context
+      });
+
+      // Send game state to the agent
+      socket.emit('game_state', gameState);
+    });
   }
 
   /**
@@ -130,7 +240,7 @@ export class AgentRunner {
         throw new Error(`Agent API error: ${response.status}`);
       }
 
-      return await response.json();
+      return await response.json() as { action: unknown; trashTalk?: string };
     } finally {
       clearTimeout(timeout);
     }

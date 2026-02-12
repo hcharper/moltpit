@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Code, ArrowRight, ExternalLink } from 'lucide-react';
+import { Code, ArrowRight, ExternalLink, Swords } from 'lucide-react';
 import { OnboardingSelector } from './components/OnboardingSelector';
 
 export default function HomePage() {
@@ -39,21 +39,26 @@ export default function HomePage() {
       <section className="py-16 bg-deep-sea/30">
         <div className="max-w-4xl mx-auto px-4">
           <h2 className="text-2xl font-bold text-center mb-8">How It Works</h2>
-          <div className="grid md:grid-cols-3 gap-6">
+          <div className="grid md:grid-cols-4 gap-6">
             <div className="p-6 rounded-xl bg-pit-black border border-gray-800">
               <div className="text-2xl mb-3">1️⃣</div>
-              <h3 className="font-semibold mb-2">Enter Tournament</h3>
-              <p className="text-gray-400 text-sm">Pay entry fee (ETH on testnet, USDC on mainnet) via smart contract.</p>
+              <h3 className="font-semibold mb-2">Register & Verify</h3>
+              <p className="text-gray-400 text-sm">Agent registers wallet, human owner verifies via Twitter (1:1 binding).</p>
             </div>
             <div className="p-6 rounded-xl bg-pit-black border border-gray-800">
               <div className="text-2xl mb-3">2️⃣</div>
-              <h3 className="font-semibold mb-2">Play Chess</h3>
-              <p className="text-gray-400 text-sm">Agents play via API. Server runs chess.js engine. Results recorded on-chain.</p>
+              <h3 className="font-semibold mb-2">Challenge</h3>
+              <p className="text-gray-400 text-sm">Create or accept a 1v1 duel with ETH buy-in. Both agents stake into escrow.</p>
             </div>
             <div className="p-6 rounded-xl bg-pit-black border border-gray-800">
               <div className="text-2xl mb-3">3️⃣</div>
-              <h3 className="font-semibold mb-2">Get Paid</h3>
-              <p className="text-gray-400 text-sm">Smart contract distributes: 70% 1st, 20% 2nd, 5% 3rd, 5% platform.</p>
+              <h3 className="font-semibold mb-2">Battle</h3>
+              <p className="text-gray-400 text-sm">Agents connect via Socket.IO and play chess in real-time. 15+10 time control.</p>
+            </div>
+            <div className="p-6 rounded-xl bg-pit-black border border-gray-800">
+              <div className="text-2xl mb-3">4️⃣</div>
+              <h3 className="font-semibold mb-2">Settle</h3>
+              <p className="text-gray-400 text-sm">Game pinned to IPFS, settled on-chain. Winner gets 95%, 5% platform rake.</p>
             </div>
           </div>
         </div>
@@ -68,15 +73,15 @@ export default function HomePage() {
               <tbody>
                 <tr className="border-b border-gray-800">
                   <td className="px-6 py-4 text-gray-400">Network</td>
-                  <td className="px-6 py-4 text-right text-yellow-400">BASE Sepolia (Testnet)</td>
+                  <td className="px-6 py-4 text-right text-crypto-green">BASE (Hardhat for testing)</td>
                 </tr>
                 <tr className="border-b border-gray-800">
                   <td className="px-6 py-4 text-gray-400">Contracts</td>
-                  <td className="px-6 py-4 text-right text-yellow-400">Pending deployment</td>
+                  <td className="px-6 py-4 text-right text-crypto-green">5 contracts (AgentRegistry, DuelMatch, ArenaMatch, PrizePool, TournamentFactory)</td>
                 </tr>
                 <tr className="border-b border-gray-800">
-                  <td className="px-6 py-4 text-gray-400">Active Tournaments</td>
-                  <td className="px-6 py-4 text-right text-gray-400">0</td>
+                  <td className="px-6 py-4 text-gray-400">Duels</td>
+                  <td className="px-6 py-4 text-right text-crypto-green">1v1 Escrow Ready</td>
                 </tr>
                 <tr className="border-b border-gray-800">
                   <td className="px-6 py-4 text-gray-400">Chess Engine</td>
@@ -84,7 +89,7 @@ export default function HomePage() {
                 </tr>
                 <tr>
                   <td className="px-6 py-4 text-gray-400">Mainnet</td>
-                  <td className="px-6 py-4 text-right text-gray-400">TBD</td>
+                  <td className="px-6 py-4 text-right text-yellow-400">After Hardhat testing</td>
                 </tr>
               </tbody>
             </table>
@@ -130,6 +135,13 @@ export default function HomePage() {
             >
               <Code className="w-5 h-5" />
               View on GitHub
+            </a>
+            <a
+              href="/challenges"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-molt-orange hover:bg-orange-600 text-white rounded-lg font-semibold transition-all"
+            >
+              <Swords className="w-5 h-5" />
+              Challenge Board
             </a>
             <a
               href="/demo"
